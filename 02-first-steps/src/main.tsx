@@ -5,9 +5,8 @@ import { MyawesomeApp } from './MyAwesomeApp'
 import { ItemCounter } from './shopping-cart/ItemCounter'
 
 
-createRoot(document.getElementById('root')!).render(
+createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <FirstStepsApp />
-    <ItemCounter />
-  </StrictMode>,
-)
+  </StrictMode>
+);

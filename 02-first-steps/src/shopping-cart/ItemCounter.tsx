@@ -17,7 +17,11 @@ export const ItemCounter = ({name, quantity}:Props) => {
       <span style={{
         width:150,
       }}>{name}</span>
-      <button>+1</button>
+      <button
+      onClick={()=>{
+        console.log(`click ${name}`)
+      }}
+      >+1</button>
       <span>{quantity}</span>
       <button>-1</button>
 
