@@ -1,3 +1,5 @@
+import { useState } from "react";
+
 interface Props {
   name: string;
   quantity?: number;
@@ -7,6 +9,14 @@ interface Props {
 
 
 export const ItemCounter = ({name, quantity}:Props) => {
+
+  const [count, setCount] = useState(10);
+
+  const handleAdd = () => {
+    setCount(count + 1);
+  }
+
+
   return (
     <section style={{
       display:'flex',
