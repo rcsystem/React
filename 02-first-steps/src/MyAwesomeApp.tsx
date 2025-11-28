@@ -1,36 +1,44 @@
-import type { CSSProperties } from "react";
+import { CSSProperties } from 'react';
 
-const firstName = "Rafael";
-const lastName = "Cruz";
-const favoriteGames = ["Zelda", "Mario", "Metroid"];
-const isActive = true;
+const firstName = 'Fernando';
+const lastName = 'Herrera';
+
+const favoriteGames = ['Elden Ring', 'Smash', 'Metal Gear'];
+const isActive = false;
+
 const address = {
-  street: "123 Main St",
-  city: "Anytown",
-  country: "USA",
+  zipCode: 'ABC-123',
+  country: 'Canadá',
 };
 
 const myStyles: CSSProperties = {
-  color: "blue",
-  backgroundColor: "lightgray",
-  padding: "10px",
-  borderRadius: "5px",
+  backgroundColor: '#fafafa',
+  borderRadius: 20,
+  padding: 10,
+  marginTop: 30,
 };
 
-export function MyawesomeApp() {
+export const MyAwesomeApp = () => {
   return (
-    <div>
-      <h2>{firstName}</h2>
-      <h3>{lastName}</h3>
-      <ul>
-        {favoriteGames.map((game) => (
-          <li key={game}>{game}</li>
-        ))}
-      </ul>
-      <p>{favoriteGames.join(", ")}</p>
-      <p>{isActive.toString()}</p>
-      <p>{isActive ? "Activo" : "Inactivo"}</p>
+    <>
+      <h1> {firstName} </h1>
+      <h3> {lastName} </h3>
+
+      <p>{favoriteGames.join(', ')}</p>
+      <p>{2 + 2}</p>
+
+      <h1>{isActive ? 'Activo' : 'No activo'}</h1>
+
       <p style={myStyles}>{JSON.stringify(address)}</p>
-    </div>
+    </>
   );
-}
+};
+
+// export function MyAwesomeApp() {
+//   return (
+//     <>
+//       <h1>Fernando</h1>
+//       <h3>Herrera</h3>
+//     </>
+//   );
+// }
