@@ -1,18 +1,15 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState } from "react";
 import { useAuth } from "../auth/AuthContext";
 import { llamarApi } from "../api/clienteApi";
 
 type Documento = {
   id: number;
   nombre: string;
-  tipo: "orden" | "factura" | "otro";
+  tipo: "certificado" | "orden" | "factura" | "otro";
   fecha: string;
   tamaño: string;
   url_descarga: string;
   descripcion?: string;
-  hash_verificacion?: string;
-  encriptado?: boolean;
-  expira_en?: string;
 };
 
 type BusquedaRequest = {
@@ -20,110 +17,30 @@ type BusquedaRequest = {
   numero_serie?: string;
   orden_compra?: string;
   tipo_busqueda: "serie" | "orden";
-  nonce: string;
-  timestamp: number;
 };
 
 type BusquedaResponse = {
   documentos: Documento[];
   mensaje: string;
   total: number;
-  signature?: string;
-  request_id?: string;
-  timestamp?: string;
 };
 
 export function AppHome() {
-  const { usuario, cerrarSesion, token } = useAuth();
+  const { usuario, cerrarSesion } = useAuth();
   const [filtro, setFiltro] = useState("");
   const [tipoBusqueda, setTipoBusqueda] = useState<"serie" | "orden">("serie");
   const [documentos, setDocumentos] = useState<Documento[]>([]);
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busquedaRealizada, setBusquedaRealizada] = useState(false);
-  const [descargandoDocumento, setDescargandoDocumento] = useState<
-    number | null
-  >(null);
-  const [intentosFallidos, setIntentosFallidos] = useState(0);
-  const [bloqueoTemporal, setBloqueoTemporal] = useState(false);
-  const [tiempoRestante, setTiempoRestante] = useState(0);
-  const [ultimaBusqueda, setUltimaBusqueda] = useState<string>("");
-
-  const generarNonce = useCallback(() => {
-    return Math.random().toString(36).substring(2) + Date.now().toString(36);
-  }, []);
-
-  const verificarLimiteBusquedas = useCallback(() => {
-    if (intentosFallidos >= 5) {
-      setBloqueoTemporal(true);
-      setTiempoRestante(300);
-      return false;
-    }
-    return true;
-  }, [intentosFallidos]);
-
-  useEffect(() => {
-    if (!bloqueoTemporal || tiempoRestante <= 0) return;
-
-    const timer = setInterval(() => {
-      setTiempoRestante((prev) => {
-        if (prev <= 1) {
-          setBloqueoTemporal(false);
-          setIntentosFallidos(0);
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-
-    return () => clearInterval(timer);
-  }, [bloqueoTemporal, tiempoRestante]);
-
-  const sanitizarInput = (input: string): string => {
-    return input
-      .trim()
-      .replace(/[<>"'`]/g, "")
-      .substring(0, 100);
-  };
 
   const buscarDocumentos = async (e?: React.FormEvent) => {
     e?.preventDefault();
 
-    if (bloqueoTemporal) {
-      setError(
-        `Demasiados intentos fallidos. Espera ${Math.ceil(
-          tiempoRestante / 60
-        )} minutos.`
-      );
-      return;
-    }
-
-    const filtroSanitizado = sanitizarInput(filtro);
-
-    if (!filtroSanitizado) {
+    if (!filtro.trim()) {
       setError(
         "Por favor ingresa un número de " +
           (tipoBusqueda === "serie" ? "serie" : "orden de compra")
-      );
-      return;
-    }
-
-    if (
-      tipoBusqueda === "serie" &&
-      !/^[A-Z0-9\-_]{3,50}$/i.test(filtroSanitizado)
-    ) {
-      setError(
-        "Formato de serie inválido. Solo letras, números, guiones y guiones bajos."
-      );
-      return;
-    }
-
-    if (
-      tipoBusqueda === "orden" &&
-      !/^[A-Z0-9\-_]{3,50}$/i.test(filtroSanitizado)
-    ) {
-      setError(
-        "Formato de orden inválido. Solo letras, números, guiones y guiones bajos."
       );
       return;
     }
@@ -135,68 +52,49 @@ export function AppHome() {
       return;
     }
 
-    if (!verificarLimiteBusquedas()) {
-      return;
-    }
-
     setCargando(true);
     setError(null);
     setBusquedaRealizada(true);
-    setUltimaBusqueda(filtroSanitizado);
 
     try {
       const requestData: BusquedaRequest = {
         epicor_id: usuario.epicor_id,
         tipo_busqueda: tipoBusqueda,
-        nonce: generarNonce(),
-        timestamp: Date.now(),
       };
 
+      // Dependiendo del tipo de búsqueda, enviamos diferente parámetro
       if (tipoBusqueda === "serie") {
-        requestData.numero_serie = filtroSanitizado;
+        requestData.numero_serie = filtro.trim();
       } else {
-        requestData.orden_compra = filtroSanitizado;
+        requestData.orden_compra = filtro.trim();
       }
-
-      const headersSeguridad = {
-        "X-Request-ID": generarNonce(),
-        "X-User-ID": usuario.epicor_id,
-        "X-Timestamp": Date.now().toString(),
-      };
 
       const respuesta = await llamarApi<BusquedaResponse>(
         "/api/documentos/buscar",
         {
           metodo: "POST",
           cuerpo: requestData,
-          headers: headersSeguridad,
         }
       );
 
       setDocumentos(respuesta.documentos || []);
 
       if ((respuesta.documentos || []).length === 0) {
-        setError("No se encontraron Certificados para esta búsqueda.");
+        setError("No se encontraron documentos para esta búsqueda.");
       }
-
-      setIntentosFallidos(0);
     } catch (error: any) {
       console.error("Error en búsqueda:", error);
-
-      setIntentosFallidos((prev) => prev + 1);
 
       if (error?.status === 404) {
         setError("No se encontraron documentos para esta búsqueda.");
       } else if (error?.status === 400) {
-        setError("Datos de búsqueda inválidos. Verifica el formato.");
+        setError(error?.mensaje || "Datos de búsqueda inválidos.");
       } else if (error?.status === 403) {
-        setError("Acceso no autorizado.");
-      } else if (error?.status === 429) {
-        setError("Demasiadas solicitudes. Por favor espera unos minutos.");
+        setError("No tienes permisos para acceder a estos documentos.");
       } else if (error?.status === 0) {
-        setError("Error de conexión.");
+        setError("Error de conexión. Verifica tu internet.");
       } else {
-        setError("Error al procesar tu solicitud.");
+        setError("Error al buscar documentos. Intenta nuevamente.");
       }
 
       setDocumentos([]);
@@ -210,72 +108,22 @@ export function AppHome() {
     setDocumentos([]);
     setError(null);
     setBusquedaRealizada(false);
-    setUltimaBusqueda("");
   };
 
   const handleDescargar = async (documento: Documento) => {
-    if (descargandoDocumento) return;
-
-    setDescargandoDocumento(documento.id);
-
     try {
-      const descargaToken = generarNonce();
+      // Abrir en nueva pestaña o descargar directamente
+      window.open(documento.url_descarga, "_blank");
 
-      const respuestaDescarga = await llamarApi<{
-        url_segura: string;
-        expires_at: number;
-      }>("/api/documentos/generar-descarga", {
-        metodo: "POST",
-        cuerpo: {
-          documento_id: documento.id,
-          token_descarga: descargaToken,
-          timestamp: Date.now(),
-        },
-      });
-
-      if (respuestaDescarga.expires_at < Date.now()) {
-        throw new Error("Token expirado");
-      }
-
-      const link = document.createElement("a");
-      link.href = respuestaDescarga.url_segura;
-      link.download = documento.nombre.replace(/[^a-zA-Z0-9.-]/g, "_") + ".pdf";
-      link.rel = "noopener noreferrer";
-      link.target = "_blank";
-
-      link.onclick = () => {
-        setTimeout(() => {
-          document.body.removeChild(link);
-          setDescargandoDocumento(null);
-        }, 1000);
-      };
-
-      document.body.appendChild(link);
-      link.click();
-
+      // Opcional: Registrar descarga en analytics
       await llamarApi("/api/documentos/registrar-descarga", {
         metodo: "POST",
-        cuerpo: {
-          documento_id: documento.id,
-          metodo: "descarga_segura",
-        },
+        cuerpo: { documento_id: documento.id },
       });
-    } catch (error: any) {
-      console.error("Error en descarga segura:", error);
-
-      if (
-        confirm(
-          "¿Deseas intentar descargar directamente? Esto puede requerir autenticación adicional."
-        )
-      ) {
-        const ventana = window.open("", "_blank", "noopener,noreferrer");
-        if (ventana) {
-          ventana.opener = null;
-          ventana.location.href = documento.url_descarga;
-        }
-      }
-    } finally {
-      setTimeout(() => setDescargandoDocumento(null), 2000);
+    } catch (error) {
+      console.error("Error al descargar:", error);
+      // Si falla la API, intentar descarga directa
+      window.open(documento.url_descarga, "_blank");
     }
   };
 
@@ -286,56 +134,35 @@ export function AppHome() {
         <div className="container mx-auto px-4 py-4">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between">
             <div className="flex items-center space-x-3 mb-4 md:mb-0">
-              <div className="bg-white p-2 rounded-lg relative">
+              <div className="bg-white p-2 rounded-lg">
                 <img
                   src="/icon.png"
                   alt="Walworth Logo"
                   className="w-10 h-10 object-contain"
                 />
-                <div className="absolute -top-1 -right-1 w-3 h-3 bg-green-400 rounded-full border border-white"></div>
               </div>
               <div>
-                <div className="flex items-center space-x-2">
-                  <h1 className="text-2xl font-bold">
-                    Portal de Certificados y Documentos
-                  </h1>
-                </div>
+                <h1 className="text-2xl font-bold">Portal de Documentos</h1>
                 <p className="text-red-100 text-sm">Walworth Company</p>
               </div>
             </div>
 
             <div className="flex flex-col md:flex-row md:items-center space-y-3 md:space-y-0 md:space-x-6">
-              <div className="bg-red-700/30 backdrop-blur-sm rounded-lg p-3 border border-red-500/20">
-                <div className="flex items-center justify-between mb-1">
-                  <p className="text-sm text-red-50">Usuario verificado</p>
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    className="h-4 w-4 text-green-300"
-                    viewBox="0 0 20 20"
-                    fill="currentColor"
-                  >
-                    <path
-                      fillRule="evenodd"
-                      d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
-                      clipRule="evenodd"
-                    />
-                  </svg>
-                </div>
-                <p className="font-semibold text-sm">
+              <div className="bg-red-700/30 backdrop-blur-sm rounded-lg p-3">
+                <p className="text-sm text-red-50">Conectado como</p>
+                <p className="font-semibold">
                   {usuario?.epicor_id || usuario?.rfc}
                 </p>
-                <p className="text-xs text-red-100 truncate max-w-[200px]">
-                  {usuario?.correo}
-                </p>
+                <p className="text-xs text-red-100">{usuario?.correo}</p>
               </div>
 
               <button
                 onClick={cerrarSesion}
-                className="px-4 py-2 bg-white/20 hover:bg-white/30 text-white rounded-lg font-medium transition-colors duration-200 flex items-center justify-center space-x-2 group"
+                className="px-4 py-2 bg-white/20 hover:bg-white/30 text-white rounded-lg font-medium transition-colors duration-200 flex items-center justify-center space-x-2"
               >
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
-                  className="h-5 w-5 group-hover:rotate-90 transition-transform"
+                  className="h-5 w-5"
                   viewBox="0 0 20 20"
                   fill="currentColor"
                 >
@@ -352,138 +179,36 @@ export function AppHome() {
         </div>
       </header>
 
-      {/* Banner de bloqueo */}
-      {bloqueoTemporal && (
-        <div className="bg-red-50 border-l-4 border-red-500 p-4">
-          <div className="container mx-auto">
-            <div className="flex items-center">
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                className="h-6 w-6 text-red-500 mr-3"
-                viewBox="0 0 20 20"
-                fill="currentColor"
-              >
-                <path
-                  fillRule="evenodd"
-                  d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
-                  clipRule="evenodd"
-                />
-              </svg>
-              <div className="flex-1">
-                <p className="font-medium text-red-800">
-                  Actividad inusual detectada. Cuenta bloqueada temporalmente.
-                </p>
-                <p className="text-red-700 text-sm">
-                  Tiempo restante: {Math.floor(tiempoRestante / 60)}:
-                  {("0" + (tiempoRestante % 60)).slice(-2)}
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Contenido principal */}
       <main className="container mx-auto px-4 py-8">
         {/* Panel de bienvenida */}
         <div className="mb-8">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h2 className="text-3xl font-bold text-gray-800 mb-2">
-                Portal de Certificados.
-              </h2>
-              <p className="text-gray-600">
-                Acceso verificado a certificados y documentos.
-              </p>
-            </div>
-            <div className="flex items-center space-x-2 text-sm text-gray-500">
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                className="h-5 w-5 text-green-500"
-                viewBox="0 0 20 20"
-                fill="currentColor"
-              >
-                <path
-                  fillRule="evenodd"
-                  d="M2.166 4.999A11.954 11.954 0 0010 1.944 11.954 11.954 0 0017.834 5c.11.65.166 1.32.166 2.001 0 5.225-3.34 9.67-8 11.317C5.34 16.67 2 12.225 2 7c0-.682.057-1.35.166-2.001zm11.541 3.708a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
-                  clipRule="evenodd"
-                />
-              </svg>
-              <span>
-                Sesión cifrada • Último acceso:{" "}
-                {new Date().toLocaleTimeString()}
-              </span>
-            </div>
-          </div>
+          <h2 className="text-3xl font-bold text-gray-800 mb-2">
+            Bienvenido al Portal de Documentos
+          </h2>
+          <p className="text-gray-600">
+            Busca y descarga tus certificados, serie u órdenes de compra
+          </p>
         </div>
 
         {/* Panel de búsqueda */}
-        <div className="bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden mb-8 relative">
-          <div className="absolute top-0 right-0 p-4 opacity-10">
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              className="h-24 w-24 text-green-500"
-              viewBox="0 0 20 20"
-              fill="currentColor"
-            >
-              <path
-                fillRule="evenodd"
-                d="M2.166 4.999A11.954 11.954 0 0010 1.944 11.954 11.954 0 0017.834 5c.11.65.166 1.32.166 2.001 0 5.225-3.34 9.67-8 11.317C5.34 16.67 2 12.225 2 7c0-.682.057-1.35.166-2.001zm11.541 3.708a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
-                clipRule="evenodd"
-              />
-            </svg>
-          </div>
-
+        <div className="bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden mb-8">
           <div className="p-8">
             <div className="mb-6">
-              <div className="flex items-center mb-2">
-                <h2 className="text-2xl font-bold text-gray-800">
-                  Búsqueda de Documentos
-                </h2>
-              </div>
+              <h2 className="text-2xl font-bold text-gray-800 mb-2">
+                Buscar Documentos
+              </h2>
               <p className="text-gray-600">
-                Ingresa un número de serie u orden de compra para acceder a
-                documentos asociados.
+                Ingresa un número de serie u orden de compra para buscar
+                documentos relacionados
               </p>
             </div>
-
-            {/* Advertencia de intentos */}
-            {intentosFallidos > 0 && intentosFallidos < 6 && (
-              <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-lg">
-                <div className="flex items-center">
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    className="h-5 w-5 text-amber-500 mr-3"
-                    viewBox="0 0 20 20"
-                    fill="currentColor"
-                  >
-                    <path
-                      fillRule="evenodd"
-                      d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
-                      clipRule="evenodd"
-                    />
-                  </svg>
-                  <div>
-                    <p className="font-medium text-amber-800">
-                      {6 - intentosFallidos} intento
-                      {intentosFallidos !== 5 ? "s" : ""} restante
-                      {intentosFallidos !== 5 ? "s" : ""} antes del bloqueo
-                    </p>
-                    <p className="text-amber-700 text-sm">
-                      Si continúan los errores, tu busqueda será bloqueada
-                      temporalmente.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            )}
 
             {/* Selector de tipo de búsqueda */}
             <div className="mb-6">
               <div className="flex flex-col sm:flex-row sm:items-center sm:space-x-4 space-y-3 sm:space-y-0">
                 <div className="flex space-x-1 bg-gray-100 p-1 rounded-lg w-fit">
                   <button
-                    type="button"
                     onClick={() => {
                       setTipoBusqueda("serie");
                       setFiltro("");
@@ -510,7 +235,6 @@ export function AppHome() {
                   </button>
 
                   <button
-                    type="button"
                     onClick={() => {
                       setTipoBusqueda("orden");
                       setFiltro("");
@@ -536,7 +260,7 @@ export function AppHome() {
                           clipRule="evenodd"
                         />
                       </svg>
-                      <span>Buscar por Orden</span>
+                      <span>Buscar por Orden de Compra</span>
                     </div>
                   </button>
                 </div>
@@ -565,7 +289,7 @@ export function AppHome() {
                         : "Ejemplo: OC-2024-001, PO-123456"
                     }
                     className="w-full px-5 py-4 pl-14 pr-12 rounded-xl border border-gray-300 focus:outline-none focus:ring-3 focus:ring-red-500/20 focus:border-red-500 transition-all duration-200 text-lg"
-                    disabled={cargando || bloqueoTemporal}
+                    disabled={cargando}
                   />
 
                   <div className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400">
@@ -599,7 +323,6 @@ export function AppHome() {
                       type="button"
                       onClick={handleLimpiar}
                       className="absolute right-4 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors duration-200"
-                      disabled={cargando}
                     >
                       <svg
                         xmlns="http://www.w3.org/2000/svg"
@@ -617,65 +340,7 @@ export function AppHome() {
                   )}
                 </div>
 
-                {/* Validación en tiempo real */}
-                {filtro && !error && (
-                  <div className="mt-2 flex items-center text-sm">
-                    {tipoBusqueda === "serie" &&
-                    /^[A-Z0-9\-_]{3,50}$/i.test(filtro) ? (
-                      <span className="text-green-600 flex items-center">
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          className="h-4 w-4 mr-1"
-                          viewBox="0 0 20 20"
-                          fill="currentColor"
-                        >
-                          <path
-                            fillRule="evenodd"
-                            d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
-                            clipRule="evenodd"
-                          />
-                        </svg>
-                        Formato de serie válido
-                      </span>
-                    ) : tipoBusqueda === "orden" &&
-                      /^[A-Z0-9\-_]{3,50}$/i.test(filtro) ? (
-                      <span className="text-green-600 flex items-center">
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          className="h-4 w-4 mr-1"
-                          viewBox="0 0 20 20"
-                          fill="currentColor"
-                        >
-                          <path
-                            fillRule="evenodd"
-                            d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
-                            clipRule="evenodd"
-                          />
-                        </svg>
-                        Formato de orden válido
-                      </span>
-                    ) : (
-                      <span className="text-amber-600 flex items-center">
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          className="h-4 w-4 mr-1"
-                          viewBox="0 0 20 20"
-                          fill="currentColor"
-                        >
-                          <path
-                            fillRule="evenodd"
-                            d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
-                            clipRule="evenodd"
-                          />
-                        </svg>
-                        Usa solo letras, números, guiones y guiones bajos
-                      </span>
-                    )}
-                  </div>
-                )}
-
-                {/* Mensajes de error */}
-                {error && (
+                {error && busquedaRealizada && (
                   <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
                     <p className="text-red-700 text-sm flex items-center">
                       <svg
@@ -698,15 +363,7 @@ export function AppHome() {
 
               <button
                 type="submit"
-                disabled={
-                  cargando ||
-                  !filtro.trim() ||
-                  bloqueoTemporal ||
-                  (tipoBusqueda === "serie" &&
-                    !/^[A-Z0-9\-_]{3,50}$/i.test(filtro)) ||
-                  (tipoBusqueda === "orden" &&
-                    !/^[A-Z0-9\-_]{3,50}$/i.test(filtro))
-                }
+                disabled={cargando || !filtro.trim()}
                 className="w-full py-4 px-6 rounded-xl bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 text-white font-semibold text-lg shadow-lg hover:shadow-xl transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:shadow-lg flex items-center justify-center"
               >
                 {cargando ? (
@@ -731,25 +388,7 @@ export function AppHome() {
                         d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
                       ></path>
                     </svg>
-                    {bloqueoTemporal
-                      ? `Espera ${Math.ceil(tiempoRestante / 60)} min`
-                      : "Buscando documentos..."}
-                  </>
-                ) : bloqueoTemporal ? (
-                  <>
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      className="h-6 w-6 mr-3"
-                      viewBox="0 0 20 20"
-                      fill="currentColor"
-                    >
-                      <path
-                        fillRule="evenodd"
-                        d="M10 18a8 8 0 100-16 8 8 0 000 16zM7 9a1 1 0 000 2h6a1 1 0 100-2H7z"
-                        clipRule="evenodd"
-                      />
-                    </svg>
-                    Cuenta bloqueada temporalmente
+                    Buscando documentos...
                   </>
                 ) : (
                   <>
@@ -777,12 +416,12 @@ export function AppHome() {
                 <div className="flex items-center justify-between mb-6">
                   <div>
                     <h3 className="text-xl font-semibold text-gray-800">
-                      Documentos Encontrados
+                      Resultados de búsqueda
                     </h3>
                     <p className="text-gray-600 text-sm">
                       {tipoBusqueda === "serie"
-                        ? `Serie buscada: ${ultimaBusqueda}`
-                        : `Orden de compra buscada: ${ultimaBusqueda}`}
+                        ? `Serie buscada: ${filtro}`
+                        : `Orden de compra buscada: ${filtro}`}
                     </p>
                   </div>
                   <div className="text-sm text-gray-500">
@@ -814,62 +453,14 @@ export function AppHome() {
                     <p className="text-gray-500">
                       No hay documentos asociados a esta búsqueda.
                     </p>
-                    <button
-                      onClick={handleLimpiar}
-                      className="mt-4 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition-colors duration-200"
-                    >
-                      Nueva búsqueda
-                    </button>
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {documentos.map((documento) => (
                       <div
                         key={documento.id}
-                        className="bg-white rounded-xl border border-gray-200 p-5 hover:shadow-lg transition-shadow duration-200 relative"
+                        className="bg-white rounded-xl border border-gray-200 p-5 hover:shadow-lg transition-shadow duration-200"
                       >
-                        {/* Badge de seguridad */}
-                        {documento.encriptado && (
-                          <div className="absolute top-4 right-4">
-                            <span className="px-2 py-1 bg-purple-100 text-purple-800 text-xs font-semibold rounded-full flex items-center">
-                              <svg
-                                xmlns="http://www.w3.org/2000/svg"
-                                className="h-3 w-3 mr-1"
-                                viewBox="0 0 20 20"
-                                fill="currentColor"
-                              >
-                                <path
-                                  fillRule="evenodd"
-                                  d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z"
-                                  clipRule="evenodd"
-                                />
-                              </svg>
-                              Encriptado
-                            </span>
-                          </div>
-                        )}
-
-                        {/* Indicador de integridad */}
-                        {documento.hash_verificacion && (
-                          <div className="absolute bottom-4 right-4">
-                            <span className="text-xs text-gray-500 flex items-center">
-                              <svg
-                                xmlns="http://www.w3.org/2000/svg"
-                                className="h-3 w-3 mr-1 text-green-500"
-                                viewBox="0 0 20 20"
-                                fill="currentColor"
-                              >
-                                <path
-                                  fillRule="evenodd"
-                                  d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
-                                  clipRule="evenodd"
-                                />
-                              </svg>
-                              Integridad verificada
-                            </span>
-                          </div>
-                        )}
-
                         <div className="flex items-start justify-between mb-4">
                           <div className="flex items-center space-x-3">
                             <div
@@ -954,61 +545,25 @@ export function AppHome() {
                               "es-ES"
                             )}
                           </div>
-                          <div className="text-xs text-gray-400">
-                            {documento.expira_en
-                              ? `Expira: ${new Date(
-                                  documento.expira_en
-                                ).toLocaleDateString("es-ES")}`
-                              : "Sin expiración"}
-                          </div>
                         </div>
 
                         <button
                           onClick={() => handleDescargar(documento)}
-                          disabled={descargandoDocumento === documento.id}
-                          className="w-full py-2 px-4 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition-colors duration-200 flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
+                          className="w-full py-2 px-4 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition-colors duration-200 flex items-center justify-center"
                         >
-                          {descargandoDocumento === documento.id ? (
-                            <>
-                              <svg
-                                className="animate-spin -ml-1 mr-3 h-5 w-5 text-white"
-                                xmlns="http://www.w3.org/2000/svg"
-                                fill="none"
-                                viewBox="0 0 24 24"
-                              >
-                                <circle
-                                  className="opacity-25"
-                                  cx="12"
-                                  cy="12"
-                                  r="10"
-                                  stroke="currentColor"
-                                  strokeWidth="4"
-                                ></circle>
-                                <path
-                                  className="opacity-75"
-                                  fill="currentColor"
-                                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                                ></path>
-                              </svg>
-                              Preparando descarga segura...
-                            </>
-                          ) : (
-                            <>
-                              <svg
-                                xmlns="http://www.w3.org/2000/svg"
-                                className="h-5 w-5 mr-2"
-                                viewBox="0 0 20 20"
-                                fill="currentColor"
-                              >
-                                <path
-                                  fillRule="evenodd"
-                                  d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z"
-                                  clipRule="evenodd"
-                                />
-                              </svg>
-                              Descargar PDF Seguro
-                            </>
-                          )}
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            className="h-5 w-5 mr-2"
+                            viewBox="0 0 20 20"
+                            fill="currentColor"
+                          >
+                            <path
+                              fillRule="evenodd"
+                              d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z"
+                              clipRule="evenodd"
+                            />
+                          </svg>
+                          Descargar PDF
                         </button>
                       </div>
                     ))}
@@ -1022,7 +577,7 @@ export function AppHome() {
         {/* Instrucciones */}
         <div className="bg-gradient-to-r from-gray-50 to-gray-100 rounded-2xl p-8 border border-gray-200">
           <h3 className="text-xl font-semibold text-gray-800 mb-4">
-            ¿Cómo buscar certificados?
+            ¿Cómo buscar documentos?
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="bg-white p-5 rounded-xl border border-gray-200">
@@ -1065,8 +620,7 @@ export function AppHome() {
                 </h4>
               </div>
               <p className="text-gray-600 text-sm">
-                Visualiza y descarga los documentos PDF encontrados, incluyendo
-                certificados, órdenes y facturas.
+                Descarga los tus certificados encontrados en documentos PDF.
               </p>
             </div>
           </div>
@@ -1084,6 +638,7 @@ export function AppHome() {
               </p>
             </div>
             <div className="flex items-center space-x-4">
+              <p className="text-gray-500 text-sm">v1.0.0</p>
               <div className="flex items-center text-sm text-gray-500">
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
@@ -1097,22 +652,8 @@ export function AppHome() {
                     clipRule="evenodd"
                   />
                 </svg>
-                Sesión: {usuario?.epicor_id}
+                Conectado como: {usuario?.epicor_id}
               </div>
-              <div className="text-xs text-gray-400">
-                v1.0.0 • #
-                {Math.random().toString(36).substr(2, 9).toUpperCase()}
-              </div>
-            </div>
-          </div>
-          <div className="mt-4 pt-4 border-t border-gray-100">
-            <div className="flex flex-wrap gap-4 text-xs text-gray-400">
-              <a href="#" className="hover:text-gray-600">
-                Política de privacidad
-              </a>
-              <a href="#" className="hover:text-gray-600">
-                Términos de servicio
-              </a>
             </div>
           </div>
         </div>

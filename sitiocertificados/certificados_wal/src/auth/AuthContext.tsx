@@ -30,6 +30,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUsuario(null);
     localStorage.removeItem("token_portal");
     localStorage.removeItem("usuario_portal");
+    sessionStorage.removeItem("epicor_id_login");
   }
 
   const valor = useMemo(() => ({ token, usuario, iniciarSesion, cerrarSesion }), [token, usuario]);
